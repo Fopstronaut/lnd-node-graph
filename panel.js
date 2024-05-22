@@ -2,8 +2,8 @@ const [dataNodes, dataEdges] = context.panel.data.series;
 const [nodeIds, nodeNames, lastUpdates, highlighted, colors] = dataNodes.fields;
 const [chanIds, srcs, dests, chanCapacity] = dataEdges.fields;
 
-const nodeChannelLimit = [2, 75];
-const depth = 3;
+const nodeChannelLimit = [2, 30];
+const depth = 2;
 
 function truncateNumber(number, precision = 4) {
   return parseFloat(number.toPrecision(precision));
@@ -15,48 +15,47 @@ function nodeTooltipCallback({ data } = params) {
   } channels`;
 }
 
-function getNodeNeighbors(nodeID, depth = 0, nodes = [], edges = []) {
+function getNodeNeighbors(node, depth = 0, nodes = [], edges = []) {
+  if (!nodes.includes(node)) {
+    nodes.push(node);
+  }
+
   const neighbors = parsedEdges
-    .filter((v) => {
-      if (v.source === nodeID || v.target === nodeID) {
-        if (!edges.includes(v)) {
-          edges.push(v);
+    .filter((edge) => {
+      if (edge.source === node.name || edge.target === node.name) {
+        if (!edges.includes(edge)) {
+          edges.push(edge);
         }
         return true;
       }
       return false;
     })
-    .map((v) => {
-      let edgeNode = "";
-      if (v.source === nodeID) {
-        edgeNode = v.target;
+    .map((edge) => {
+      let peerNode = undefined;
+      if (edge.source === node.name) {
+        peerNode = edge.target;
+      } else if (edge.target === node.name) {
+        peerNode = edge.source;
+      } else {
+        return false;
       }
-      if (v.target === nodeID) {
-        edgeNode = v.source;
-      }
-      const node = parsedNodes.find((v) => v.name === edgeNode);
-      return node ?? false;
+      return parsedNodes.find((v) => v.name === peerNode) ?? false;
     })
     .filter(Boolean);
 
-  if (depth === 0) {
-    nodes.push(parsedNodes.find((v) => v.name == nodeID));
-  }
   if (depth > 0) {
+    depth--;
     for (const neighbor of neighbors) {
-      if (nodes.includes(neighbor.name)) {
-        continue;
-      }
       if (
         neighbor.channels < nodeChannelLimit[0] ||
         neighbor.channels > nodeChannelLimit[1]
       ) {
         continue;
       }
-      getNodeNeighbors(neighbor.name, --depth, nodes, edges);
+      getNodeNeighbors(neighbor, depth, nodes, edges);
     }
+    nodes.push(...neighbors);
   }
-  nodes.push(...neighbors);
   return [[...new Set(nodes).values()], [...new Set(edges).values()]];
 }
 
@@ -135,9 +134,20 @@ const parsedEdges = dataEdges.first
   .filter(Boolean);
 
 const ourNode = parsedNodes.find((v) => v.fixed);
-const [nodes, edges] = getNodeNeighbors(ourNode.name, depth);
+const [nodes, edges] = getNodeNeighbors(ourNode, depth);
 
 return {
+  title: {
+    backgroundColor: "#444c",
+    text: `${nodes.length - 1} nodes, ${
+      edges.length
+    } channels within ${depth} hops`,
+    textStyle: {
+      fontSize: 12,
+      fontWeight: "normal",
+    },
+    subtext: `${parsedNodes.length} nodes, ${parsedEdges.length} channels total`,
+  },
   tooltip: {
     textStyle: {
       color: "#fff",
